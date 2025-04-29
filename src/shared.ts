@@ -1,3 +1,5 @@
+import { nanoid } from "nanoid";
+
 export type ChatMessage = {
   id: string;
   content: string;
@@ -53,3 +55,8 @@ export const names = [
   "Yvonne",
   "Zoe",
 ];
+
+// Generates a random user identifier like "User-f3K7gD8xWz"
+export function generateUsername(): string {
+  return `User-${nanoid(10)}`;
+}
