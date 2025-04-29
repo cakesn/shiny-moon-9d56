@@ -1,65 +1,60 @@
-import { createRoot } from "react-dom/client";
-import { usePartySocket } from "partysocket/react";
-import React, { useState } from "react";
-import {
-  BrowserRouter,
-  Routes,
-  Route,
-  Navigate,
-  useParams,
-} from "react-router";
-import { nanoid } from "nanoid";
-
-import { type ChatMessage, type Message } from "../shared";
-
 function App() {
-  const [name, setName] = useState<string | null>(null);
+  const [name] = useState(names[Math.floor(Math.random() * names.length)]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const { room } = useParams();
 
   const socket = usePartySocket({
     party: "chat",
     room,
-    onOpen: (event, socket) => {
-      // optionally handle open event if needed
-    },
     onMessage: (evt) => {
-      const message = JSON.parse(evt.data as string) as Message | { type: "info"; user: string };
-
-      if ("type" in message) {
-        if (message.type === "all") {
-          // Received all past messages
-          setMessages(message.messages);
-        } else if (message.type === "add" || message.type === "update") {
-          setMessages((prevMessages) => {
-            const foundIndex = prevMessages.findIndex((m) => m.id === message.id);
-            if (foundIndex !== -1) {
-              return prevMessages.map((m) =>
-                m.id === message.id
-                  ? { id: message.id, content: message.content, user: message.user, role: message.role }
-                  : m
-              );
-            } else {
-              return [...prevMessages, {
-                id: message.id,
-                content: message.content,
-                user: message.user,
-                role: message.role,
-              }];
-            }
-          });
-        }
-      }
-
-      // Detect if server sends username info (optional future feature)
-      if ("user" in message && message.type === "info") {
-        setName(message.user);
+      const message = JSON.parse(evt.data as string) as Message;
+      if (message.type === "add") {
+        setMessages((messages) => {
+          const foundIndex = messages.findIndex((m) => m.id === message.id);
+          if (foundIndex === -1) {
+            return [...messages, {
+              id: message.id,
+              content: message.content,
+              user: message.user,
+              role: message.role,
+            }];
+          } else {
+            const newMessages = [...messages];
+            newMessages[foundIndex] = {
+              id: message.id,
+              content: message.content,
+              user: message.user,
+              role: message.role,
+            };
+            return newMessages;
+          }
+        });
+      } else if (message.type === "update") {
+        setMessages((messages) =>
+          messages.map((m) =>
+            m.id === message.id
+              ? {
+                  id: message.id,
+                  content: message.content,
+                  user: message.user,
+                  role: message.role,
+                }
+              : m,
+          ),
+        );
+      } else if (message.type === "all") {
+        setMessages(message.messages);
       }
     },
   });
 
-  if (!name) {
-    return <div className="loading">Connecting...</div>;
+  if (socket.readyState !== WebSocket.OPEN) {
+    // Not connected yet
+    return (
+      <div className="chat container" style={{ textAlign: "center", marginTop: "30%" }}>
+        <h2>Connecting...</h2>
+      </div>
+    );
   }
 
   return (
@@ -67,34 +62,30 @@ function App() {
       {messages.map((message) => (
         <div key={message.id} className="row message">
           <div className="two columns user">{message.user}</div>
-          <div className="ten columns">{message.content}</div>
+          <div className="ten columns content">{message.content}</div>
         </div>
       ))}
       <form
         className="row"
         onSubmit={(e) => {
           e.preventDefault();
-          const contentInput = e.currentTarget.elements.namedItem("content") as HTMLInputElement;
-          const content = contentInput.value.trim();
-          if (!content) return;
-
+          const content = e.currentTarget.elements.namedItem("content") as HTMLInputElement;
           const chatMessage: ChatMessage = {
             id: nanoid(8),
-            content,
+            content: content.value,
             user: name,
             role: "user",
           };
-
           setMessages((messages) => [...messages, chatMessage]);
 
           socket.send(
             JSON.stringify({
               type: "add",
               ...chatMessage,
-            } satisfies Message)
+            } satisfies Message),
           );
 
-          contentInput.value = "";
+          content.value = "";
         }}
       >
         <input
@@ -111,14 +102,3 @@ function App() {
     </div>
   );
 }
-
-// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-createRoot(document.getElementById("root")!).render(
-  <BrowserRouter>
-    <Routes>
-      <Route path="/" element={<Navigate to={`/${nanoid()}`} />} />
-      <Route path="/:room" element={<App />} />
-      <Route path="*" element={<Navigate to="/" />} />
-    </Routes>
-  </BrowserRouter>
-);
