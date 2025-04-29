@@ -10,65 +10,57 @@ import {
 } from "react-router";
 import { nanoid } from "nanoid";
 
-import { names, type ChatMessage, type Message } from "../shared";
+import { type ChatMessage, type Message } from "../shared";
 
 function App() {
-  const [name] = useState(names[Math.floor(Math.random() * names.length)]);
+  const [name, setName] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const { room } = useParams();
 
   const socket = usePartySocket({
     party: "chat",
     room,
+    onOpen: (event, socket) => {
+      // optionally handle open event if needed
+    },
     onMessage: (evt) => {
-      const message = JSON.parse(evt.data as string) as Message;
-      if (message.type === "add") {
-        const foundIndex = messages.findIndex((m) => m.id === message.id);
-        if (foundIndex === -1) {
-          // probably someone else who added a message
-          setMessages((messages) => [
-            ...messages,
-            {
-              id: message.id,
-              content: message.content,
-              user: message.user,
-              role: message.role,
-            },
-          ]);
-        } else {
-          // this usually means we ourselves added a message
-          // and it was broadcasted back
-          // so let's replace the message with the new message
-          setMessages((messages) => {
-            return messages
-              .slice(0, foundIndex)
-              .concat({
+      const message = JSON.parse(evt.data as string) as Message | { type: "info"; user: string };
+
+      if ("type" in message) {
+        if (message.type === "all") {
+          // Received all past messages
+          setMessages(message.messages);
+        } else if (message.type === "add" || message.type === "update") {
+          setMessages((prevMessages) => {
+            const foundIndex = prevMessages.findIndex((m) => m.id === message.id);
+            if (foundIndex !== -1) {
+              return prevMessages.map((m) =>
+                m.id === message.id
+                  ? { id: message.id, content: message.content, user: message.user, role: message.role }
+                  : m
+              );
+            } else {
+              return [...prevMessages, {
                 id: message.id,
                 content: message.content,
                 user: message.user,
                 role: message.role,
-              })
-              .concat(messages.slice(foundIndex + 1));
+              }];
+            }
           });
         }
-      } else if (message.type === "update") {
-        setMessages((messages) =>
-          messages.map((m) =>
-            m.id === message.id
-              ? {
-                  id: message.id,
-                  content: message.content,
-                  user: message.user,
-                  role: message.role,
-                }
-              : m,
-          ),
-        );
-      } else {
-        setMessages(message.messages);
+      }
+
+      // Detect if server sends username info (optional future feature)
+      if ("user" in message && message.type === "info") {
+        setName(message.user);
       }
     },
   });
+
+  if (!name) {
+    return <div className="loading">Connecting...</div>;
+  }
 
   return (
     <div className="chat container">
@@ -82,26 +74,27 @@ function App() {
         className="row"
         onSubmit={(e) => {
           e.preventDefault();
-          const content = e.currentTarget.elements.namedItem(
-            "content",
-          ) as HTMLInputElement;
+          const contentInput = e.currentTarget.elements.namedItem("content") as HTMLInputElement;
+          const content = contentInput.value.trim();
+          if (!content) return;
+
           const chatMessage: ChatMessage = {
             id: nanoid(8),
-            content: content.value,
+            content,
             user: name,
             role: "user",
           };
+
           setMessages((messages) => [...messages, chatMessage]);
-          // we could broadcast the message here
 
           socket.send(
             JSON.stringify({
               type: "add",
               ...chatMessage,
-            } satisfies Message),
+            } satisfies Message)
           );
 
-          content.value = "";
+          contentInput.value = "";
         }}
       >
         <input
@@ -127,5 +120,5 @@ createRoot(document.getElementById("root")!).render(
       <Route path="/:room" element={<App />} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
-  </BrowserRouter>,
+  </BrowserRouter>
 );
