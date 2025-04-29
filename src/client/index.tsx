@@ -1,6 +1,14 @@
+import { useState } from "react";
+import { useParams } from "react-router-dom";
+import { usePartySocket } from "partysocket/react";
+import { nanoid } from "nanoid";
+import { ChatMessage, Message, names } from "../shared";
+import "./styles.css";
+
 function App() {
   const [name] = useState(names[Math.floor(Math.random() * names.length)]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isTyping, setIsTyping] = useState(false);
   const { room } = useParams();
 
   const socket = usePartySocket({
@@ -17,6 +25,7 @@ function App() {
               content: message.content,
               user: message.user,
               role: message.role,
+              timestamp: new Date().toISOString(),
             }];
           } else {
             const newMessages = [...messages];
@@ -25,6 +34,7 @@ function App() {
               content: message.content,
               user: message.user,
               role: message.role,
+              timestamp: new Date().toISOString(),
             };
             return newMessages;
           }
@@ -38,6 +48,7 @@ function App() {
                   content: message.content,
                   user: message.user,
                   role: message.role,
+                  timestamp: new Date().toISOString(),
                 }
               : m,
           ),
@@ -49,34 +60,63 @@ function App() {
   });
 
   if (socket.readyState !== WebSocket.OPEN) {
-    // Not connected yet
     return (
-      <div className="chat container" style={{ textAlign: "center", marginTop: "30%" }}>
-        <h2>Connecting...</h2>
+      <div className="chat-container loading">
+        <div className="loading-spinner"></div>
+        <h2>Connecting to chat...</h2>
       </div>
     );
   }
 
   return (
-    <div className="chat container">
-      {messages.map((message) => (
-        <div key={message.id} className="row message">
-          <div className="two columns user">{message.user}</div>
-          <div className="ten columns content">{message.content}</div>
+    <div className="chat-container">
+      <div className="chat-header">
+        <h1>Chat Room: {room}</h1>
+        <div className="user-info">
+          <span className="user-avatar">{name[0]}</span>
+          <span className="username">{name}</span>
         </div>
-      ))}
+      </div>
+      
+      <div className="messages-container">
+        {messages.map((message) => (
+          <div 
+            key={message.id} 
+            className={`message ${message.role === "assistant" ? "assistant" : "user"}`}
+          >
+            <div className="message-avatar">
+              {message.user[0]}
+            </div>
+            <div className="message-content">
+              <div className="message-header">
+                <span className="message-user">{message.user}</span>
+                <span className="message-time">
+                  {new Date(message.timestamp || new Date()).toLocaleTimeString()}
+                </span>
+              </div>
+              <div className="message-text">{message.content}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <form
-        className="row"
+        className="message-form"
         onSubmit={(e) => {
           e.preventDefault();
           const content = e.currentTarget.elements.namedItem("content") as HTMLInputElement;
+          if (!content.value.trim()) return;
+          
           const chatMessage: ChatMessage = {
             id: nanoid(8),
             content: content.value,
             user: name,
             role: "user",
+            timestamp: new Date().toISOString(),
           };
+          
           setMessages((messages) => [...messages, chatMessage]);
+          setIsTyping(false);
 
           socket.send(
             JSON.stringify({
@@ -91,14 +131,21 @@ function App() {
         <input
           type="text"
           name="content"
-          className="ten columns my-input-text"
+          className="message-input"
           placeholder={`Hello ${name}! Type a message...`}
           autoComplete="off"
+          onChange={(e) => setIsTyping(e.target.value.trim().length > 0)}
         />
-        <button type="submit" className="send-message two columns">
+        <button 
+          type="submit" 
+          className="send-button"
+          disabled={!isTyping}
+        >
           Send
         </button>
       </form>
     </div>
   );
 }
+
+export default App;
